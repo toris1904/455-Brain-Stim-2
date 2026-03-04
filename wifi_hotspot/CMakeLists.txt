@@ -34,29 +34,43 @@ project(wifi_hotspot C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
+# Commented out threadsafe_background - it requires complex sys_arch setup
+# Use the poll version below instead
+# add_executable(picow_access_point_background
+#         wifi_hotspot.c
+#         dhcpserver.c
+#         dnsserver.c
+#         )
+# 
+# target_include_directories(picow_access_point_background PRIVATE
+#         ${CMAKE_CURRENT_LIST_DIR}
+#         )
+# 
+# target_link_libraries(picow_access_point_background
+#         pico_cyw43_arch_lwip_threadsafe_background
+#         pico_stdlib
+#         )
+# # You can change the address below to change the address of the access point
+# pico_configure_ip4_address(picow_access_point_background PRIVATE
+#         CYW43_DEFAULT_IP_AP_ADDRESS 192.168.4.1
+#         )
+# pico_add_extra_outputs(picow_access_point_background)
 
-add_executable(wifi_hotspot wifi_hotspot.c )
-
-pico_set_program_name(wifi_hotspot "wifi_hotspot")
-pico_set_program_version(wifi_hotspot "0.1")
-
-# Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(wifi_hotspot 0)
-pico_enable_stdio_usb(wifi_hotspot 0)
-
-# Add the standard library to the build
-target_link_libraries(wifi_hotspot
-        pico_stdlib)
-
-# Add the standard include files to the build
-target_include_directories(wifi_hotspot PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-)
-
-# Add any user requested libraries
-target_link_libraries(wifi_hotspot 
-        
+add_executable(picow_access_point_poll
+        wifi_hotspot.c
+        dhcpserver.c
+        dnsserver.c
         )
+target_include_directories(picow_access_point_poll PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}
 
-pico_add_extra_outputs(wifi_hotspot)
-
+        )
+target_link_libraries(picow_access_point_poll
+        pico_cyw43_arch_lwip_poll
+        pico_stdlib
+        )
+# You can change the address below to change the address of the access point
+pico_configure_ip4_address(picow_access_point_poll PRIVATE
+        CYW43_DEFAULT_IP_AP_ADDRESS 192.168.4.1
+        )
+pico_add_extra_outputs(picow_access_point_poll)
