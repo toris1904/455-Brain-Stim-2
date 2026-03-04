@@ -23,7 +23,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico2_w CACHE STRING "Board type")
+set(PICO_BOARD pico_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -73,4 +73,7 @@ target_link_libraries(picow_access_point_poll
 pico_configure_ip4_address(picow_access_point_poll PRIVATE
         CYW43_DEFAULT_IP_AP_ADDRESS 192.168.4.1
         )
+pico_enable_stdio_usb(picow_access_point_poll 1)
+pico_enable_stdio_uart(picow_access_point_poll 0)
+
 pico_add_extra_outputs(picow_access_point_poll)

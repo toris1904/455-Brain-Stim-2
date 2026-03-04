@@ -1,8 +1,3 @@
-/**
- * Copyright (c) 2022 Raspberry Pi (Trading) Ltd.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
 
 #include <string.h>
 
@@ -20,11 +15,31 @@
 #define POLL_TIME_S 5
 #define HTTP_GET "GET"
 #define HTTP_RESPONSE_HEADERS "HTTP/1.1 %d OK\nContent-Length: %d\nContent-Type: text/html; charset=utf-8\nConnection: close\n\n"
-#define LED_TEST_BODY "<html><body><h1>Hello from Pico.</h1><p>Led is %s</p><p><a href=\"?led=%d\">Turn led %s</a></body></html>"
-#define LED_PARAM "led=%d"
-#define LED_TEST "/ledtest"
-#define LED_GPIO 0
-#define HTTP_RESPONSE_REDIRECT "HTTP/1.1 302 Redirect\nLocation: http://%s" LED_TEST "\n\n"
+#define HTTP_RESPONSE_REDIRECT "HTTP/1.1 302 Redirect\nLocation: http://%s/\n\n"
+#define CONTROL_PATH "/"
+#define HTML_BODY \
+    "<html><head><title>Pico W Control</title>" \
+    "<style>" \
+    "body{font-family:sans-serif;display:flex;justify-content:center;padding:20px}" \
+    ".card{border:1px solid #ccc;border-radius:8px;padding:20px;min-width:220px}" \
+    ".row{display:flex;align-items:center;gap:10px;margin-bottom:12px}" \
+    "select{padding:4px}" \
+    "button{margin-top:12px;padding:8px 16px;cursor:pointer;display:block}" \
+    "</style></head>" \
+    "<body><div class=\"home card\">" \
+    "<form method=\"GET\" action=\"/\">" \
+    "<div class=\"row\">" \
+    "<input type=\"checkbox\" name=\"ch1\" value=\"1\" %s onchange=\"this.form.submit()\">" \
+    "<label>Channel 1</label>" \
+    "<select name=\"ch1val\" onchange=\"this.form.submit()\">%s</select>" \
+    "</div>" \
+    "<div class=\"row\">" \
+    "<input type=\"checkbox\" name=\"ch2\" value=\"1\" %s onchange=\"this.form.submit()\">" \
+    "<label>Channel 2</label>" \
+    "<select name=\"ch2val\" onchange=\"this.form.submit()\">%s</select>" \
+    "</div>" \
+    "<button type=\"submit\" name=\"toggle\" value=\"1\">%s</button>" \
+    "</form></div></body></html>"
 
 typedef struct TCP_SERVER_T_ {
     struct tcp_pcb *server_pcb;
@@ -36,7 +51,7 @@ typedef struct TCP_CONNECT_STATE_T_ {
     struct tcp_pcb *pcb;
     int sent_len;
     char headers[128];
-    char result[256];
+    char result[2048];
     int header_len;
     int result_len;
     ip_addr_t *gw;
@@ -82,33 +97,56 @@ static err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
     return ERR_OK;
 }
 
+//Main webpage
+static bool channel1_on = false;
+static bool channel2_on = false;
+static bool is_connected = false;
+static int channel1_val = 1;
+static int channel2_val = 1;
+
+static void build_select_options(char *buf, int buf_len, int selected) {
+    int pos = 0;
+    for (int i = 1; i <= 10; i++) {
+        pos += snprintf(buf + pos, buf_len - pos,
+            "<option value=\"%d\"%s>%d</option>",
+            i, (i == selected) ? " selected" : "", i);
+    }
+}
+
 static int test_server_content(const char *request, const char *params, char *result, size_t max_result_len) {
     int len = 0;
-    if (strncmp(request, LED_TEST, sizeof(LED_TEST) - 1) == 0) {
-        // Get the state of the led
-        bool value;
-        cyw43_gpio_get(&cyw43_state, LED_GPIO, &value);
-        int led_state = value;
-
-        // See if the user changed it
+    if (strncmp(request, CONTROL_PATH, sizeof(CONTROL_PATH) - 1) == 0) {
         if (params) {
-            int led_param = sscanf(params, LED_PARAM, &led_state);
-            if (led_param == 1) {
-                if (led_state) {
-                    // Turn led on
-                    cyw43_gpio_set(&cyw43_state, LED_GPIO, true);
-                } else {
-                    // Turn led off
-                    cyw43_gpio_set(&cyw43_state, LED_GPIO, false);
-                }
+            // Unchecked checkboxes are absent from GET params, so presence = checked
+            channel1_on = (strstr(params, "ch1=1") != NULL);
+            channel2_on = (strstr(params, "ch2=1") != NULL);
+            // Toggle connected state when button is clicked
+            if (strstr(params, "toggle=1") != NULL) {
+                is_connected = !is_connected;
+            }
+            // Parse dropdown values
+            char *v1 = strstr(params, "ch1val=");
+            if (v1) {
+                channel1_val = atoi(v1 + 7);
+                if (channel1_val < 1) channel1_val = 1;
+                if (channel1_val > 10) channel1_val = 10;
+            }
+            char *v2 = strstr(params, "ch2val=");
+            if (v2) {
+                channel2_val = atoi(v2 + 7);
+                if (channel2_val < 1) channel2_val = 1;
+                if (channel2_val > 10) channel2_val = 10;
             }
         }
-        // Generate result
-        if (led_state) {
-            len = snprintf(result, max_result_len, LED_TEST_BODY, "ON", 0, "OFF");
-        } else {
-            len = snprintf(result, max_result_len, LED_TEST_BODY, "OFF", 1, "ON");
-        }
+        char opts1[320], opts2[320];
+        build_select_options(opts1, sizeof(opts1), channel1_val);
+        build_select_options(opts2, sizeof(opts2), channel2_val);
+        len = snprintf(result, max_result_len, HTML_BODY,
+            channel1_on ? "checked" : "",
+            opts1,
+            channel2_on ? "checked" : "",
+            opts2,
+            is_connected ? "Disconnect" : "Connect");
     }
     return len;
 }
