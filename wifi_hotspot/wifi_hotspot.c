@@ -10,6 +10,12 @@
 #include "dhcpserver.h"
 #include "dnsserver.h"
 
+// Backend signal generation functions
+extern void backend_init(void);
+extern void backend_set_channel_frequency(uint8_t channel, float freq_hz);
+extern void backend_set_channel_amplitude(uint8_t channel, uint16_t amplitude);
+extern void backend_enable_channel(uint8_t channel, bool enable);
+
 #define TCP_PORT 80
 #define DEBUG_printf printf
 #define POLL_TIME_S 5
@@ -17,29 +23,60 @@
 #define HTTP_RESPONSE_HEADERS "HTTP/1.1 %d OK\nContent-Length: %d\nContent-Type: text/html; charset=utf-8\nConnection: close\n\n"
 #define HTTP_RESPONSE_REDIRECT "HTTP/1.1 302 Redirect\nLocation: http://%s/\n\n"
 #define CONTROL_PATH "/"
+
+// HTML Template for Web Interface
 #define HTML_BODY \
-    "<html><head><title>Pico W Control</title>" \
-    "<style>" \
-    "body{font-family:sans-serif;display:flex;justify-content:center;padding:20px}" \
-    ".card{border:1px solid #ccc;border-radius:8px;padding:20px;min-width:220px}" \
-    ".row{display:flex;align-items:center;gap:10px;margin-bottom:12px}" \
-    "select{padding:4px}" \
-    "button{margin-top:12px;padding:8px 16px;cursor:pointer;display:block}" \
-    "</style></head>" \
-    "<body><div class=\"home card\">" \
-    "<form method=\"GET\" action=\"/\">" \
-    "<div class=\"row\">" \
-    "<input type=\"checkbox\" name=\"ch1\" value=\"1\" %s onchange=\"this.form.submit()\">" \
-    "<label>Channel 1</label>" \
-    "<select name=\"ch1val\" onchange=\"this.form.submit()\">%s</select>" \
-    "</div>" \
-    "<div class=\"row\">" \
-    "<input type=\"checkbox\" name=\"ch2\" value=\"1\" %s onchange=\"this.form.submit()\">" \
-    "<label>Channel 2</label>" \
-    "<select name=\"ch2val\" onchange=\"this.form.submit()\">%s</select>" \
-    "</div>" \
-    "<button type=\"submit\" name=\"toggle\" value=\"1\">%s</button>" \
-    "</form></div></body></html>"
+    "<html>" \
+    "<head>" \
+        "<title>Pico W Control</title>" \
+        "<style>" \
+            "body {" \
+                "font-family: sans-serif;" \
+                "display: flex;" \
+                "justify-content: center;" \
+                "padding: 20px;" \
+            "}" \
+            ".card {" \
+                "border: 1px solid #ccc;" \
+                "border-radius: 8px;" \
+                "padding: 20px;" \
+                "min-width: 220px;" \
+            "}" \
+            ".row {" \
+                "display: flex;" \
+                "align-items: center;" \
+                "gap: 10px;" \
+                "margin-bottom: 12px;" \
+            "}" \
+            "select {" \
+                "padding: 4px;" \
+            "}" \
+            "button {" \
+                "margin-top: 12px;" \
+                "padding: 8px 16px;" \
+                "cursor: pointer;" \
+                "display: block;" \
+            "}" \
+        "</style>" \
+    "</head>" \
+    "<body>" \
+        "<div class=\"home card\">" \
+            "<form method=\"GET\" action=\"/\">" \
+                "<div class=\"row\">" \
+                    "<input type=\"checkbox\" name=\"ch1\" value=\"1\" %s onchange=\"this.form.submit()\">" \
+                    "<label>Channel 1</label>" \
+                    "<select name=\"ch1val\" onchange=\"this.form.submit()\">%s</select>" \
+                "</div>" \
+                "<div class=\"row\">" \
+                    "<input type=\"checkbox\" name=\"ch2\" value=\"1\" %s onchange=\"this.form.submit()\">" \
+                    "<label>Channel 2</label>" \
+                    "<select name=\"ch2val\" onchange=\"this.form.submit()\">%s</select>" \
+                "</div>" \
+                "<button type=\"submit\" name=\"toggle\" value=\"1\">%s</button>" \
+            "</form>" \
+        "</div>" \
+    "</body>" \
+    "</html>"
 
 typedef struct TCP_SERVER_T_ {
     struct tcp_pcb *server_pcb;
@@ -51,7 +88,7 @@ typedef struct TCP_CONNECT_STATE_T_ {
     struct tcp_pcb *pcb;
     int sent_len;
     char headers[128];
-    char result[2048];
+    char result[3072];
     int header_len;
     int result_len;
     ip_addr_t *gw;
@@ -100,16 +137,22 @@ static err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
 //Main webpage
 static bool channel1_on = false;
 static bool channel2_on = false;
-static bool is_connected = false;
+static bool is_running = false;
 static int channel1_val = 1;
 static int channel2_val = 1;
+
+// Map dropdown value (1-10) to frequency in Hz
+static float value_to_frequency(int val) {
+    return (float)val * 100.0f;  // 1=100Hz, 2=200Hz, ... 10=1000Hz
+}
 
 static void build_select_options(char *buf, int buf_len, int selected) {
     int pos = 0;
     for (int i = 1; i <= 10; i++) {
+        int freq_hz = (int)value_to_frequency(i);
         pos += snprintf(buf + pos, buf_len - pos,
-            "<option value=\"%d\"%s>%d</option>",
-            i, (i == selected) ? " selected" : "", i);
+            "<option value=\"%d\"%s>%d Hz</option>",
+            i, (i == selected) ? " selected" : "", freq_hz);
     }
 }
 
@@ -118,24 +161,50 @@ static int test_server_content(const char *request, const char *params, char *re
     if (strncmp(request, CONTROL_PATH, sizeof(CONTROL_PATH) - 1) == 0) {
         if (params) {
             // Unchecked checkboxes are absent from GET params, so presence = checked
-            channel1_on = (strstr(params, "ch1=1") != NULL);
-            channel2_on = (strstr(params, "ch2=1") != NULL);
-            // Toggle connected state when button is clicked
+            bool new_ch1_on = (strstr(params, "ch1=1") != NULL);
+            bool new_ch2_on = (strstr(params, "ch2=1") != NULL);
+            
+            // Update channel 1 enable state
+            if (new_ch1_on != channel1_on) {
+                channel1_on = new_ch1_on;
+                backend_enable_channel(1, channel1_on);
+                printf("Channel 1 %s\n", channel1_on ? "enabled" : "disabled");
+            }
+            
+            // Update channel 2 enable state
+            if (new_ch2_on != channel2_on) {
+                channel2_on = new_ch2_on;
+                backend_enable_channel(2, channel2_on);
+                printf("Channel 2 %s\n", channel2_on ? "enabled" : "disabled");
+            }
+            // Toggle running state when button is clicked
             if (strstr(params, "toggle=1") != NULL) {
-                is_connected = !is_connected;
+                is_running = !is_running;
             }
             // TODO: connect LUT to these dropdowns and implement backend wave gen.
+            // Update channel 1 frequency
             char *v1 = strstr(params, "ch1val=");
             if (v1) {
-                channel1_val = atoi(v1 + 7);
-                if (channel1_val < 1) channel1_val = 1;
-                if (channel1_val > 10) channel1_val = 10;
+                int new_val = atoi(v1 + 7);
+                if (new_val < 1) new_val = 1;
+                if (new_val > 10) new_val = 10;
+                if (new_val != channel1_val) {
+                    channel1_val = new_val;
+                    backend_set_channel_frequency(1, value_to_frequency(channel1_val));
+                    printf("Channel 1 frequency set to %.0f Hz\n", value_to_frequency(channel1_val));
+                }
             }
+            // Update channel 2 frequency
             char *v2 = strstr(params, "ch2val=");
             if (v2) {
-                channel2_val = atoi(v2 + 7);
-                if (channel2_val < 1) channel2_val = 1;
-                if (channel2_val > 10) channel2_val = 10;
+                int new_val = atoi(v2 + 7);
+                if (new_val < 1) new_val = 1;
+                if (new_val > 10) new_val = 10;
+                if (new_val != channel2_val) {
+                    channel2_val = new_val;
+                    backend_set_channel_frequency(2, value_to_frequency(channel2_val));
+                    printf("Channel 2 frequency set to %.0f Hz\n", value_to_frequency(channel2_val));
+                }
             }
         }
         char opts1[320], opts2[320];
@@ -146,7 +215,7 @@ static int test_server_content(const char *request, const char *params, char *re
             opts1,
             channel2_on ? "checked" : "",
             opts2,
-            is_connected ? "Disconnect" : "Connect");
+            is_running ? "Soft Kill" : "Start");
     }
     return len;
 }
@@ -331,6 +400,16 @@ int main() {
         DEBUG_printf("failed to initialise\n");
         return 1;
     }
+
+    // Initialize backend signal generation
+    printf("Initializing signal generation backend...\n");
+    backend_init();
+    
+    // Set initial frequencies
+    backend_set_channel_frequency(1, value_to_frequency(channel1_val));
+    backend_set_channel_frequency(2, value_to_frequency(channel2_val));
+    printf("Backend initialized - Ch1: %.0f Hz, Ch2: %.0f Hz\n", 
+           value_to_frequency(channel1_val), value_to_frequency(channel2_val));
 
     // Get notified if the user presses a key
     stdio_set_chars_available_callback(key_pressed_func, state);
