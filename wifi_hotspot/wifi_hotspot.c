@@ -124,7 +124,7 @@ static int test_server_content(const char *request, const char *params, char *re
             if (strstr(params, "toggle=1") != NULL) {
                 is_connected = !is_connected;
             }
-            // Parse dropdown values
+            // TODO: connect LUT to these dropdowns and implement backend wave gen.
             char *v1 = strstr(params, "ch1val=");
             if (v1) {
                 channel1_val = atoi(v1 + 7);
