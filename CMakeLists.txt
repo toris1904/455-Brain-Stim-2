@@ -23,7 +23,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico_w CACHE STRING "Board type")
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(pico_lut_test pico_lut_test.c waveform.c dac8411.c)
+add_executable(pico_lut_test main.c wifi_hotspot.c waveform.c dac8411.c dhcpserver.c dnsserver.c)
 
 pico_set_program_name(pico_lut_test "pico_lut_test")
 pico_set_program_version(pico_lut_test "0.1")
@@ -58,7 +58,7 @@ target_link_libraries(pico_lut_test
         hardware_timer
         hardware_gpio
         hardware_spi
-        pico_cyw43_arch_none
+        pico_cyw43_arch_lwip_poll
         )
 
 pico_add_extra_outputs(pico_lut_test)

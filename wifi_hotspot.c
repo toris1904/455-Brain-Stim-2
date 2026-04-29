@@ -1,5 +1,6 @@
 
 #include <string.h>
+#include <stdlib.h>
 
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
@@ -9,12 +10,16 @@
 
 #include "dhcpserver.h"
 #include "dnsserver.h"
+#include "wifi_hotspot.h"
+#include "waveform.h"
 
-// Backend signal generation functions
-extern void backend_init(void);
-extern void backend_set_channel_frequency(uint8_t channel, float freq_hz);
-extern void backend_set_channel_amplitude(uint8_t channel, uint16_t amplitude);
-extern void backend_enable_channel(uint8_t channel, bool enable);
+/* Waveform channel state owned by main.c */
+extern volatile WaveformChannel g_channel_1;
+extern volatile WaveformChannel g_channel_2;
+
+/* DHCP and DNS server instances — live for the lifetime of the hotspot */
+static dhcp_server_t g_dhcp_server;
+static dns_server_t  g_dns_server;
 
 #define TCP_PORT 80
 #define DEBUG_printf printf
@@ -23,66 +28,93 @@ extern void backend_enable_channel(uint8_t channel, bool enable);
 #define HTTP_RESPONSE_HEADERS "HTTP/1.1 %d OK\nContent-Length: %d\nContent-Type: text/html; charset=utf-8\nConnection: close\n\n"
 #define HTTP_RESPONSE_REDIRECT "HTTP/1.1 302 Redirect\nLocation: http://%s/\n\n"
 #define CONTROL_PATH "/"
+#define STATUS_PATH  "/status"
 
 // HTML Template for Web Interface
 #define HTML_BODY \
     "<html>" \
     "<head>" \
-        "<title>Pico W Control</title>" \
+        "<title>Brain Stim</title>" \
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" \
         "<style>" \
-            "body {" \
-                "font-family: sans-serif;" \
-                "display: flex;" \
-                "justify-content: center;" \
-                "padding: 20px;" \
+            "*{box-sizing:border-box;}" \
+            "body{" \
+                "font-family:sans-serif;" \
+                "display:flex;" \
+                "justify-content:center;" \
+                "align-items:flex-start;" \
+                "padding:16px;" \
+                "margin:0;" \
             "}" \
-            ".card {" \
-                "border: 1px solid #ccc;" \
-                "border-radius: 8px;" \
-                "padding: 20px;" \
-                "min-width: 220px;" \
+            ".card{" \
+                "border:1px solid #ccc;" \
+                "border-radius:8px;" \
+                "padding:16px;" \
+                "width:100%%;" \
+                "max-width:360px;" \
             "}" \
-            ".row {" \
-                "display: flex;" \
-                "align-items: center;" \
-                "gap: 10px;" \
-                "margin-bottom: 12px;" \
+            ".row{" \
+                "display:flex;" \
+                "flex-direction:column;" \
+                "margin-bottom:12px;" \
             "}" \
-            "select {" \
-                "padding: 4px;" \
+            "label{" \
+                "font-size:0.85em;" \
+                "margin-bottom:4px;" \
+                "color:#555;" \
             "}" \
-            "button {" \
-                "margin-top: 12px;" \
-                "padding: 8px 16px;" \
-                "cursor: pointer;" \
-                "display: block;" \
+            "input[type=number],select{" \
+                "width:100%%;" \
+                "padding:8px;" \
+                "font-size:1em;" \
+                "border:1px solid #ccc;" \
+                "border-radius:4px;" \
+            "}" \
+            "button{" \
+                "margin-top:8px;" \
+                "width:100%%;" \
+                "padding:12px;" \
+                "font-size:1em;" \
+                "cursor:pointer;" \
+                "border-radius:4px;" \
+                "border:none;" \
+                "background:#1a73e8;" \
+                "color:#fff;" \
             "}" \
         "</style>" \
     "</head>" \
     "<body>" \
-        "<div class=\"home card\">" \
+        "<div class=\"card\">" \
             "<form method=\"GET\" action=\"/\">" \
                 "<div class=\"row\">" \
-                    "<input type=\"checkbox\" name=\"ch1\" value=\"1\" %s onchange=\"this.form.submit()\">" \
-                    "<label>Channel 1</label>" \
-                    "<select name=\"ch1val\" onchange=\"this.form.submit()\">%s</select>" \
+                    "<label>Channel 1 Frequency (Hz)</label>" \
+                    "<input type=\"number\" name=\"ch1val\" min=\"10\" max=\"10000\" value=\"%d\" onchange=\"this.form.submit()\">" \
                 "</div>" \
                 "<div class=\"row\">" \
-                    "<input type=\"checkbox\" name=\"ch2\" value=\"1\" %s onchange=\"this.form.submit()\">" \
-                    "<label>Channel 2</label>" \
-                    "<select name=\"ch2val\" onchange=\"this.form.submit()\">%s</select>" \
+                    "<label>Channel 1 Shape</label>" \
+                    "<select name=\"ch1shape\" onchange=\"this.form.submit()\">%s</select>" \
                 "</div>" \
-                "<button type=\"submit\" name=\"toggle\" value=\"1\">%s</button>" \
+                "<div class=\"row\">" \
+                    "<label>Channel 2 Frequency (Hz)</label>" \
+                    "<input type=\"number\" name=\"ch2val\" min=\"10\" max=\"10000\" value=\"%d\" onchange=\"this.form.submit()\">" \
+                "</div>" \
+                "<div class=\"row\">" \
+                    "<label>Channel 2 Shape</label>" \
+                    "<select name=\"ch2shape\" onchange=\"this.form.submit()\">%s</select>" \
+                "</div>" \
+                "<button id=\"tb\" type=\"submit\" name=\"toggle\" value=\"1\">%s</button>" \
             "</form>" \
         "</div>" \
+    "<script>" \
+    "setInterval(function(){" \
+        "fetch('/status').then(function(r){return r.text();}).then(function(s){" \
+            "var b=document.getElementById('tb');" \
+            "if(b){b.textContent=s==='on'?'Soft Kill':'Start';}" \
+        "});" \
+    "},1000);" \
+    "</script>" \
     "</body>" \
     "</html>"
-
-typedef struct TCP_SERVER_T_ {
-    struct tcp_pcb *server_pcb;
-    bool complete;
-    ip_addr_t gw;
-} TCP_SERVER_T;
 
 typedef struct TCP_CONNECT_STATE_T_ {
     struct tcp_pcb *pcb;
@@ -135,87 +167,97 @@ static err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
 }
 
 //Main webpage
-static bool channel1_on = false;
-static bool channel2_on = false;
-static bool is_running = false;
-static int channel1_val = 1;
-static int channel2_val = 1;
+static int channel1_val = 2000;   // Hz, range 10-10000
+static int channel2_val = 2010;   // Hz, range 10-10000
+static int channel1_shape = WAVEFORM_SHAPE_SINE;
+static int channel2_shape = WAVEFORM_SHAPE_SINE;
 
-// Map dropdown value (1-10) to frequency in Hz
-static float value_to_frequency(int val) {
-    return (float)val * 100.0f;  // 1=100Hz, 2=200Hz, ... 10=1000Hz
-}
-
-static void build_select_options(char *buf, int buf_len, int selected) {
+static void build_shape_options(char *buf, int buf_len, int selected) {
+    static const char *names[] = { "Sine", "Triangle", "Square" };
     int pos = 0;
-    for (int i = 1; i <= 10; i++) {
-        int freq_hz = (int)value_to_frequency(i);
+    for (int i = 0; i < 3; i++) {
         pos += snprintf(buf + pos, buf_len - pos,
-            "<option value=\"%d\"%s>%d Hz</option>",
-            i, (i == selected) ? " selected" : "", freq_hz);
+            "<option value=\"%d\"%s>%s</option>",
+            i, (i == selected) ? " selected" : "", names[i]);
     }
 }
 
 static int test_server_content(const char *request, const char *params, char *result, size_t max_result_len) {
     int len = 0;
-    if (strncmp(request, CONTROL_PATH, sizeof(CONTROL_PATH) - 1) == 0) {
+    if (strncmp(request, STATUS_PATH, sizeof(STATUS_PATH) - 1) == 0) {
+        const char *state_str = (g_device_state == DEVICE_STATE_RUNNING ||
+                                 g_device_state == DEVICE_STATE_RAMPING_UP) ? "on" : "off";
+        len = snprintf(result, max_result_len, "%s", state_str);
+    } else if (strncmp(request, CONTROL_PATH, sizeof(CONTROL_PATH) - 1) == 0) {
         if (params) {
-            // Unchecked checkboxes are absent from GET params, so presence = checked
-            bool new_ch1_on = (strstr(params, "ch1=1") != NULL);
-            bool new_ch2_on = (strstr(params, "ch2=1") != NULL);
-            
-            // Update channel 1 enable state
-            if (new_ch1_on != channel1_on) {
-                channel1_on = new_ch1_on;
-                backend_enable_channel(1, channel1_on);
-                printf("Channel 1 %s\n", channel1_on ? "enabled" : "disabled");
-            }
-            
-            // Update channel 2 enable state
-            if (new_ch2_on != channel2_on) {
-                channel2_on = new_ch2_on;
-                backend_enable_channel(2, channel2_on);
-                printf("Channel 2 %s\n", channel2_on ? "enabled" : "disabled");
-            }
             // Toggle running state when button is clicked
             if (strstr(params, "toggle=1") != NULL) {
-                is_running = !is_running;
+                if (g_device_state == DEVICE_STATE_OFF) {
+                    device_request_start();
+                } else if (g_device_state == DEVICE_STATE_RUNNING ||
+                           g_device_state == DEVICE_STATE_RAMPING_UP) {
+                    device_request_stop();
+                }
             }
-            // TODO: connect LUT to these dropdowns and implement backend wave gen.
             // Update channel 1 frequency
             char *v1 = strstr(params, "ch1val=");
             if (v1) {
                 int new_val = atoi(v1 + 7);
-                if (new_val < 1) new_val = 1;
-                if (new_val > 10) new_val = 10;
+                if (new_val < 10)    new_val = 10;
+                if (new_val > 10000) new_val = 10000;
                 if (new_val != channel1_val) {
                     channel1_val = new_val;
-                    backend_set_channel_frequency(1, value_to_frequency(channel1_val));
-                    printf("Channel 1 frequency set to %.0f Hz\n", value_to_frequency(channel1_val));
+                    waveform_set_frequency((WaveformChannel *)&g_channel_1, (float)channel1_val);
+                    printf("Channel 1 frequency set to %d Hz\n", channel1_val);
                 }
             }
             // Update channel 2 frequency
             char *v2 = strstr(params, "ch2val=");
             if (v2) {
                 int new_val = atoi(v2 + 7);
-                if (new_val < 1) new_val = 1;
-                if (new_val > 10) new_val = 10;
+                if (new_val < 10)    new_val = 10;
+                if (new_val > 10000) new_val = 10000;
                 if (new_val != channel2_val) {
                     channel2_val = new_val;
-                    backend_set_channel_frequency(2, value_to_frequency(channel2_val));
-                    printf("Channel 2 frequency set to %.0f Hz\n", value_to_frequency(channel2_val));
+                    waveform_set_frequency((WaveformChannel *)&g_channel_2, (float)channel2_val);
+                    printf("Channel 2 frequency set to %d Hz\n", channel2_val);
+                }
+            }
+            // Update channel 1 shape
+            char *s1 = strstr(params, "ch1shape=");
+            if (s1) {
+                int new_shape = atoi(s1 + 9);
+                if (new_shape < 0) new_shape = 0;
+                if (new_shape > 2) new_shape = 2;
+                if (new_shape != channel1_shape) {
+                    channel1_shape = new_shape;
+                    waveform_set_shape((WaveformChannel *)&g_channel_1, (WaveformShape)channel1_shape);
+                    printf("Channel 1 shape set to %d\n", channel1_shape);
+                }
+            }
+            // Update channel 2 shape
+            char *s2 = strstr(params, "ch2shape=");
+            if (s2) {
+                int new_shape = atoi(s2 + 9);
+                if (new_shape < 0) new_shape = 0;
+                if (new_shape > 2) new_shape = 2;
+                if (new_shape != channel2_shape) {
+                    channel2_shape = new_shape;
+                    waveform_set_shape((WaveformChannel *)&g_channel_2, (WaveformShape)channel2_shape);
+                    printf("Channel 2 shape set to %d\n", channel2_shape);
                 }
             }
         }
-        char opts1[320], opts2[320];
-        build_select_options(opts1, sizeof(opts1), channel1_val);
-        build_select_options(opts2, sizeof(opts2), channel2_val);
+        char shape_opts1[192], shape_opts2[192];
+        build_shape_options(shape_opts1, sizeof(shape_opts1), channel1_shape);
+        build_shape_options(shape_opts2, sizeof(shape_opts2), channel2_shape);
         len = snprintf(result, max_result_len, HTML_BODY,
-            channel1_on ? "checked" : "",
-            opts1,
-            channel2_on ? "checked" : "",
-            opts2,
-            is_running ? "Soft Kill" : "Start");
+            channel1_val,
+            shape_opts1,
+            channel2_val,
+            shape_opts2,
+            (g_device_state == DEVICE_STATE_RUNNING ||
+             g_device_state == DEVICE_STATE_RAMPING_UP) ? "Soft Kill" : "Start");
     }
     return len;
 }
@@ -387,39 +429,23 @@ void key_pressed_func(void *param) {
     }
 }
 
-int main() {
-    stdio_init_all();
-
-    TCP_SERVER_T *state = calloc(1, sizeof(TCP_SERVER_T));
-    if (!state) {
-        DEBUG_printf("failed to allocate state\n");
-        return 1;
-    }
-
-    if (cyw43_arch_init()) {
-        DEBUG_printf("failed to initialise\n");
-        return 1;
-    }
-
-    // Initialize backend signal generation
-    printf("Initializing signal generation backend...\n");
-    backend_init();
-    
+/* --------------------------------------------------------------------------
+ * wifi_hotspot_start
+ *
+ * Enables AP mode, starts DHCP/DNS servers, and opens the HTTP server.
+ * cyw43_arch_init() must already have been called by the caller (main.c).
+ * Returns true on success, false on any failure.
+ * -------------------------------------------------------------------------- */
+bool wifi_hotspot_start(TCP_SERVER_T *state) {
     // Set initial frequencies
-    backend_set_channel_frequency(1, value_to_frequency(channel1_val));
-    backend_set_channel_frequency(2, value_to_frequency(channel2_val));
-    printf("Backend initialized - Ch1: %.0f Hz, Ch2: %.0f Hz\n", 
-           value_to_frequency(channel1_val), value_to_frequency(channel2_val));
+    waveform_set_frequency((WaveformChannel *)&g_channel_1, (float)channel1_val);
+    waveform_set_frequency((WaveformChannel *)&g_channel_2, (float)channel2_val);
 
-    // Get notified if the user presses a key
+    // Register key-press callback so 'd' shuts down the AP
     stdio_set_chars_available_callback(key_pressed_func, state);
 
     const char *ap_name = "picow_test";
-#if 1
     const char *password = "password";
-#else
-    const char *password = NULL;
-#endif
 
     cyw43_arch_enable_ap_mode(ap_name, password, CYW43_AUTH_WPA2_AES_PSK);
 
@@ -435,41 +461,26 @@ int main() {
 
     #undef IP
 
-    // Start the dhcp server
-    dhcp_server_t dhcp_server;
-    dhcp_server_init(&dhcp_server, &state->gw, &mask);
-
-    // Start the dns server
-    dns_server_t dns_server;
-    dns_server_init(&dns_server, &state->gw);
+    dhcp_server_init(&g_dhcp_server, &state->gw, &mask);
+    dns_server_init(&g_dns_server, &state->gw);
 
     if (!tcp_server_open(state, ap_name)) {
         DEBUG_printf("failed to open server\n");
-        return 1;
+        return false;
     }
 
     state->complete = false;
-    while(!state->complete) {
-        // the following #ifdef is only here so this same example can be used in multiple modes;
-        // you do not need it in your code
-#if PICO_CYW43_ARCH_POLL
-        // if you are using pico_cyw43_arch_poll, then you must poll periodically from your
-        // main loop (not from a timer interrupt) to check for Wi-Fi driver or lwIP work that needs to be done.
-        cyw43_arch_poll();
-        // you can poll as often as you like, however if you have nothing else to do you can
-        // choose to sleep until either a specified time, or cyw43_arch_poll() has work to do:
-        cyw43_arch_wait_for_work_until(make_timeout_time_ms(1000));
-#else
-        // if you are not using pico_cyw43_arch_poll, then Wi-FI driver and lwIP work
-        // is done via interrupt in the background. This sleep is just an example of some (blocking)
-        // work you might be doing.
-        sleep_ms(1000);
-#endif
-    }
+    return true;
+}
+
+/* --------------------------------------------------------------------------
+ * wifi_hotspot_stop
+ *
+ * Tears down the HTTP, DNS, and DHCP servers.
+ * Does NOT call cyw43_arch_deinit() — the caller handles that.
+ * -------------------------------------------------------------------------- */
+void wifi_hotspot_stop(TCP_SERVER_T *state) {
     tcp_server_close(state);
-    dns_server_deinit(&dns_server);
-    dhcp_server_deinit(&dhcp_server);
-    cyw43_arch_deinit();
-    printf("Test complete\n");
-    return 0;
+    dns_server_deinit(&g_dns_server);
+    dhcp_server_deinit(&g_dhcp_server);
 }
