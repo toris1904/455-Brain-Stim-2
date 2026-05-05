@@ -35,6 +35,8 @@
 #define PIN_HARD_KILL_BTN 10u
 #define PIN_ON 11u
 #define PIN_OFF 12u
+#define PIN_ON2 13u
+#define PIN_OFF2 14u
 
 
 /* --------------------------------------------------------------------------
@@ -50,12 +52,11 @@ static void send_pulse(uint pin)
 
 /* Tracks which output pin was pulsed most recently (PIN_ON or PIN_OFF).
  * Starts as PIN_OFF so the first hard-kill press sends a PIN_ON pulse. */
-static uint g_last_pin_sent = PIN_OFF;
-
+static uint g_last_pin_sent = PIN_OFF2;
 /* --------------------------------------------------------------------------
- * Ramp configuration  (5-second linear amplitude ramp, 10 ms step)
+ * Ramp configuration  (20-second linear amplitude ramp, 10 ms step)
  * -------------------------------------------------------------------------- */
-#define RAMP_DURATION_MS      5000u
+#define RAMP_DURATION_MS      20000u
 #define RAMP_STEP_INTERVAL_MS 10u
 #define RAMP_STEPS            (RAMP_DURATION_MS / RAMP_STEP_INTERVAL_MS)
 #define RAMP_STEP_DELTA       (1.0f / (float)RAMP_STEPS)
@@ -127,6 +128,8 @@ void device_request_start(void)
         g_device_state = DEVICE_STATE_RAMPING_UP;
         send_pulse(PIN_ON);
         g_last_pin_sent = PIN_ON;
+        send_pulse(PIN_ON2);
+        g_last_pin_sent = PIN_ON2;
     }
 }
 
@@ -137,7 +140,9 @@ void device_request_stop(void)
         g_last_ramp_us = time_us_64();
         g_device_state = DEVICE_STATE_RAMPING_DOWN;
         send_pulse(PIN_OFF);
+        send_pulse(PIN_OFF2);
         g_last_pin_sent = PIN_OFF;
+        g_last_pin_sent = PIN_OFF2;
     }
 }
 
@@ -189,6 +194,12 @@ int main(void)
     gpio_init(PIN_OFF);
     gpio_set_dir(PIN_OFF, GPIO_OUT);
     gpio_put(PIN_OFF, 0);
+    gpio_init(PIN_ON2);
+    gpio_set_dir(PIN_ON2, GPIO_OUT);
+    gpio_put(PIN_ON2, 0);
+    gpio_init(PIN_OFF2);
+    gpio_set_dir(PIN_OFF2, GPIO_OUT);
+    gpio_put(PIN_OFF2, 0);
 
     /* Initialise the CYW43 Wi-Fi chip (also needed for the onboard LED) */
     if (cyw43_arch_init()) {
@@ -270,6 +281,8 @@ int main(void)
             g_device_state = DEVICE_STATE_OFF;
             send_pulse(PIN_OFF);
             g_last_pin_sent = PIN_OFF;
+            send_pulse(PIN_ON);
+            g_last_pin_sent = PIN_ON;
         }
 
         /* 3. Non-blocking ramp state machine */
