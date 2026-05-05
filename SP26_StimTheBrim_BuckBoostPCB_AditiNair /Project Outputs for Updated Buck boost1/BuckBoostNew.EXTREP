@@ -1,0 +1,29 @@
+------------------------------------------------------------------------------------------
+Gerber File Extension Report For: BuckBoostNew.GBR   4/14/2026  4:18:16 PM
+------------------------------------------------------------------------------------------
+
+
+------------------------------------------------------------------------------------------
+Layer Extension     Layer Description                      
+------------------------------------------------------------------------------------------
+.gbr                Top Overlay                             
+.gbr                Top Paste                               
+.gbr                Top Solder                              
+.gbr                Top Layer                               
+.gbr                Bottom Layer                            
+.gbr                Bottom Solder                           
+.gbr                Bottom Paste                            
+.gbr                Bottom Overlay                          
+.gbr                Mechanical 1                            
+.gbr                Top Component Center                    
+.gbr                Bottom Component Center                 
+.gbr                Top Assembly                            
+.gbr                Bottom Assembly                         
+.gbr                Top Courtyard                           
+.gbr                Bottom Courtyard                        
+.gbr                Top 3D Body                             
+.gbr                Bottom 3D Body                          
+.gbr                Top Designator                          
+.gbr                Bottom Designator                       
+.gbr                Profile                                 
+------------------------------------------------------------------------------------------
