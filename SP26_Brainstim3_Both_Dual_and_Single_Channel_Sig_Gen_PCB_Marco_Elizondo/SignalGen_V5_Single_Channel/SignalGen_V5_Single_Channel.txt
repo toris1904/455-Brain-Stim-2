@@ -1,0 +1,29 @@
+Board Information Report
+Filename     : C:\Users\Public\Documents\Altium\SignalGen_V5_Single_Channel\SignalGen_V5_Single_Channel.PcbDoc
+Date         : 2/17/2026
+Time         : 3:34:55 PM
+Time Elapsed : 00:00:00
+
+General
+    Board Size, 80mmx60mm
+    Components on board, 43
+count : 2
+
+Layer, Arcs, Pads, Vias, Tracks, Texts, Fills, Regions, ComponentBodies
+    Top Layer, 0, 103, 0, 0, 0, 0, 14, 0
+    Bottom Layer, 0, 0, 0, 0, 0, 0, 0, 0
+    Mechanical 1, 0, 0, 0, 0, 0, 0, 0, 16
+    Mechanical 13, 19, 0, 0, 468, 18, 0, 0, 10
+    Mechanical 15, 0, 0, 0, 192, 0, 0, 16, 0
+    Mechanical 20, 0, 0, 0, 52, 0, 0, 0, 0
+    Multi-Layer, 0, 12, 0, 0, 0, 0, 1, 0
+    Top Paste, 0, 0, 0, 0, 0, 0, 0, 0
+    Top Overlay, 11, 0, 0, 54, 120, 0, 2, 0
+    Top Solder, 0, 0, 0, 0, 0, 0, 0, 0
+    Bottom Solder, 0, 0, 0, 0, 0, 0, 0, 0
+    Bottom Overlay, 0, 0, 0, 0, 0, 0, 0, 0
+    Bottom Paste, 0, 0, 0, 0, 0, 0, 0, 0
+    Drill Guide, 0, 0, 0, 0, 0, 0, 0, 0
+    Keep-Out Layer, 0, 0, 0, 0, 0, 0, 14, 0
+    Drill Drawing, 0, 0, 0, 0, 0, 0, 0, 0
+count : 16

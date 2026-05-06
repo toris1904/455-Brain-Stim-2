@@ -1,0 +1,18 @@
+Output: Gerber Files
+Type  : Gerber
+From  : Variant [[No Variations]] of Project [SignalGen_V5_Single_Channel.PrjPcb]
+   Generated File[dual_channel.GTO]
+   Generated File[dual_channel.GTS]
+   Generated File[dual_channel.GTL]
+   Generated File[dual_channel.GBL]
+   Generated File[dual_channel.GBS]
+   Generated File[dual_channel.GBO]
+   Generated File[dual_channel.GKO]
+   Generated File[dual_channel.EXTREP]
+   Generated File[dual_channel.REP]
+
+
+Files Generated   : 9
+Documents Printed : 0
+
+Finished Output Generation At 5:40:59 PM On 4/12/2026
