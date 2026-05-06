@@ -1,0 +1,18 @@
+Removed Pin From Net: NetName=3.3 Pin=J3-5
+Removed Pin From Net: NetName=3.3 Pin=U1-3V3
+Change Component Description : Designator=U1 Old Description=Raspberry Pi Board, Arm Cortex-M0+; Core Architecture:Arm; Core Sub-Architecture:Cortex-M0+; Kit Contents:Raspberry Pi Pico Board; No. Of Bits:32Bit; Silicon Core Number:Rp2040; Silicon Manufacturer:Raspberry Pi New Description=Raspberry Pi Board, Arm Cortex-M0+; Core Architecture:Arm; Core Sub-Architecture:Cortex-M0+; Kit Contents:Raspberry Pi Pico Board; No. Of Bits:32Bit; Silicon Core Number:Rp2040; Silicon Manufacturer:Raspberry Pi |Raspberry-Pi RASPBERRY PI PICO
+Added Component: Designator=J5(CONN_61300411121_WRE)
+Add component (AddParameter): Name = "Copyright"; Value = "Copyright (C) 2025 Ultra Librarian. All rights reserved."; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer_Name"; Value = "Wurth Electronics"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer_Part_Number"; Value = "61300411121"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "RefDes"; Value = "RefDes"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Type"; Value = "Type"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=Vsys Pin=J5-1
+Added Pin To Net: NetName=Vsys Pin=J5-2
+Added Pin To Net: NetName=GND Pin=J5-3
+Added Pin To Net: NetName=3.3 Pin=J5-4
+Change Net Name : Old Net Name=Vsys New Net Name=EN
+Added Pin To Net: NetName=NetJ3_5 Pin=J3-5
+Added Pin To Net: NetName=NetJ3_5 Pin=U1-3V3
+Added Net: Name=NetJ3_5
+Added Member To Class: ClassName=pico_v1 Member=Component J5 61300411121

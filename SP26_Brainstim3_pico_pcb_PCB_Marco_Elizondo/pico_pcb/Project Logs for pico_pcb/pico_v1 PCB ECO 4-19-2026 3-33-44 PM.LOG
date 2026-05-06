@@ -1,0 +1,9 @@
+Removed Pin From Net: NetName=EN Pin=J5-1
+Removed Pin From Net: NetName=EN Pin=J5-2
+Removed Pin From Net: NetName=GND Pin=J5-3
+Removed Pin From Net: NetName=3.3 Pin=J5-4
+Removed Member From Class: ClassName=pico_v1 Member=J5
+Change Component Description : Designator=U1 Old Description=Raspberry Pi Board, Arm Cortex-M0+; Core Architecture:Arm; Core Sub-Architecture:Cortex-M0+; Kit Contents:Raspberry Pi Pico Board; No. Of Bits:32Bit; Silicon Core Number:Rp2040; Silicon Manufacturer:Raspberry Pi New Description=Raspberry Pi Board, Arm Cortex-M0+; Core Architecture:Arm; Core Sub-Architecture:Cortex-M0+; Kit Contents:Raspberry Pi Pico Board; No. Of Bits:32Bit; Silicon Core Number:Rp2040; Silicon Manufacturer:Raspberry Pi |Raspberry-Pi RASPBERRY PI PICO
+Added Pin To Net: NetName=3.3 Pin=J3-5
+Added Pin To Net: NetName=3.3 Pin=U1-3V3
+Change Net Name : Old Net Name=EN New Net Name=Vsys
